@@ -1,6 +1,8 @@
 /*
 Copyright (c) 2013 Raivis Strogonovs
 
+http://morf.lv
+
 Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
 
 The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
@@ -32,15 +34,55 @@ Smtp::Smtp( const QString &user, const QString &pass, const QString &host, int p
 
 }
 
-void Smtp::sendMail(const QString &from, const QString &to, const QString &subject, const QString &body)
+void Smtp::sendMail(const QString &from, const QString &to, const QString &subject, const QString &body, QStringList files)
 {
-    message = "To: " + to + "\n";
+    message = "To: " + to + "\n";    
     message.append("From: " + from + "\n");
     message.append("Subject: " + subject + "\n");
+
+    //Let's intitiate multipart MIME with cutting boundary "frontier"
+    message.append("MIME-Version: 1.0\n");
+    message.append("Content-Type: multipart/mixed; boundary=frontier\n\n");
+
+
+    message.append( "--frontier\n" );
+    //message.append( "Content-Type: text/html\n\n" );  //Uncomment this for HTML formating, coment the line below
+    message.append( "Content-Type: text/plain\n\n" );
     message.append(body);
+    message.append("\n\n");
+
+    if(!files.isEmpty())
+    {
+        qDebug() << "Files to be sent: " << files.size();
+        foreach(QString filePath, files)
+        {
+            QFile file(filePath);
+            if(file.exists())
+            {
+                if (!file.open(QIODevice::ReadOnly))
+                {
+                    qDebug("Couldn't open the file");
+                    QMessageBox::warning( 0, tr( "Qt Simple SMTP client" ), tr( "Couldn't open the file\n\n" )  );
+                        return ;
+                }
+                QByteArray bytes = file.readAll();
+                message.append( "--frontier\n" );
+                message.append( "Content-Type: application/octet-stream\nContent-Disposition: attachment; filename="+ QFileInfo(file.fileName()).fileName() +";\nContent-Transfer-Encoding: base64\n\n" );
+                message.append(bytes.toBase64());
+                message.append("\n");
+            }
+        }
+    }
+    else
+        qDebug() << "No attachments found";
+
+
+    message.append( "--frontier--\n" );
+
     message.replace( QString::fromLatin1( "\n" ), QString::fromLatin1( "\r\n" ) );
-    message.replace( QString::fromLatin1( "\r\n.\r\n" ),
-    QString::fromLatin1( "\r\n..\r\n" ) );
+    message.replace( QString::fromLatin1( "\r\n.\r\n" ),QString::fromLatin1( "\r\n..\r\n" ) );
+
+
     this->from = from;
     rcpt = to;
     state = Init;
@@ -51,8 +93,11 @@ void Smtp::sendMail(const QString &from, const QString &to, const QString &subje
 
     t = new QTextStream( socket );
 
+    rcpt_index = 0;
 
-
+    rcpt_list = rcpt.split(",",QString::SkipEmptyParts);
+    qDebug()<< "recipient list "<<rcpt_list;
+    qDebug()<< "\n Number of Recipients " << rcpt_list.size();
 }
 
 Smtp::~Smtp()
@@ -176,9 +221,18 @@ void Smtp::readyRead()
     else if ( state == Rcpt && responseLine == "250" )
     {
         //Apperantly for Google it is mandatory to have MAIL FROM and RCPT email formated the following way -> <email@gmail.com>
-        *t << "RCPT TO:<" << rcpt << ">\r\n"; //r
-        t->flush();
-        state = Data;
+        if(rcpt_index < rcpt_list.size())
+        {
+            qDebug()<< "sending address # " << rcpt_index;
+            *t << "RCPT TO:<" << rcpt_list.at(rcpt_index) << ">\r\n"; //r
+            rcpt_index++;
+            t->flush();
+            if(rcpt_index == rcpt_list.size())
+            {
+                qDebug()<< "moving to data mode";
+                state = Data;
+            }
+        }
     }
     else if ( state == Data && responseLine == "250" )
     {

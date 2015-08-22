@@ -45,7 +45,6 @@ void Smtp::sendMail(const QString &from, const QString &to, const QString &subje
     message.append("Content-Type: multipart/mixed; boundary=frontier\n\n");
 
 
-
     message.append( "--frontier\n" );
     //message.append( "Content-Type: text/html\n\n" );  //Uncomment this for HTML formating, coment the line below
     message.append( "Content-Type: text/plain\n\n" );
@@ -94,8 +93,11 @@ void Smtp::sendMail(const QString &from, const QString &to, const QString &subje
 
     t = new QTextStream( socket );
 
+    rcpt_index = 0;
 
-
+    rcpt_list = rcpt.split(",",QString::SkipEmptyParts);
+    qDebug()<< "recipient list "<<rcpt_list;
+    qDebug()<< "\n Number of Recipients " << rcpt_list.size();
 }
 
 Smtp::~Smtp()
@@ -219,9 +221,18 @@ void Smtp::readyRead()
     else if ( state == Rcpt && responseLine == "250" )
     {
         //Apperantly for Google it is mandatory to have MAIL FROM and RCPT email formated the following way -> <email@gmail.com>
-        *t << "RCPT TO:<" << rcpt << ">\r\n"; //r
-        t->flush();
-        state = Data;
+        if(rcpt_index < rcpt_list.size())
+        {
+            qDebug()<< "sending address # " << rcpt_index;
+            *t << "RCPT TO:<" << rcpt_list.at(rcpt_index) << ">\r\n"; //r
+            rcpt_index++;
+            t->flush();
+            if(rcpt_index == rcpt_list.size())
+            {
+                qDebug()<< "moving to data mode";
+                state = Data;
+            }
+        }
     }
     else if ( state == Data && responseLine == "250" )
     {

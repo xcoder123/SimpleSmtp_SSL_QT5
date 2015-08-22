@@ -56,6 +56,8 @@ private:
     QSslSocket *socket;
     QString from;
     QString rcpt;
+    QStringList rcpt_list;
+    int rcpt_index;
     QString response;
     QString user;
     QString pass;
